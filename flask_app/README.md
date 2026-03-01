@@ -11,8 +11,38 @@
 
 ## 前置条件
 
-1. 已启动 DouK-Downloader 的 **Web API 模式**（`http://127.0.0.1:5555`）
+1. DouK-Downloader 的 **Web API** 已可用（本地或远程，见下方配置）
 2. Python 3.12+
+
+## 配置（API 后端地址）
+
+API 根地址 `API_BASE` 可配置，支持本地与远程：
+
+| 方式 | 说明 |
+|------|------|
+| **config.json** | 在 `flask_app` 目录下复制 `config.json.example` 为 `config.json`，设置 `api_preset` 或 `api_base` |
+| **环境变量** | `DOUK_API_PRESET=galaxy` 或 `DOUK_API_BASE=http://...` |
+
+**预设：**
+
+- `local` → `http://127.0.0.1:5555`（默认）
+- `galaxy` → `http://source.galaxystream.online:5555`
+
+**示例 config.json：**
+
+```json
+{
+  "api_preset": "galaxy"
+}
+```
+
+或直接写完整地址：
+
+```json
+{
+  "api_base": "http://source.galaxystream.online:5555"
+}
+```
 
 ## 安装与运行
 

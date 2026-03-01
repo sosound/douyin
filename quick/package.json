@@ -1,0 +1,12 @@
+{
+  "name": "quick-shortcut",
+  "private": true,
+  "description": "Build 抖音去水印下载.shortcut for quick/",
+  "scripts": {
+    "build": "node build-shortcut.js",
+    "build:galaxy": "node build-shortcut.js \"https://source.galaxystream.online/quick/\""
+  },
+  "dependencies": {
+    "@joshfarrant/shortcuts-js": "0.6.0"
+  }
+}

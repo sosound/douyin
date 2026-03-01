@@ -8,12 +8,10 @@ from urllib.parse import quote, urlparse
 import httpx
 from flask import Flask, Response, jsonify, redirect, render_template, request, session
 
+from config import API_BASE, DOWNLOAD_TIMEOUT
+
 app = Flask(__name__)
 app.secret_key = "douyin-downloader-flask-secret"  # 生产环境请更换
-
-# 配置
-API_BASE = "http://127.0.0.1:5555"
-DOWNLOAD_TIMEOUT = 120
 CONTENT_TYPE_EXT = {
     "video/mp4": "mp4",
     "video/quicktime": "mov",

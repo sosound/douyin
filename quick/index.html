@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>抖音去水印下载 - GalaxyStream</title>
+  <style>
+    :root { --bg: #0f0f12; --card: #1a1a1f; --text: #e8e8ed; --muted: #888; --accent: #7c3aed; --ok: #22c55e; --err: #ef4444; }
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 16px; min-height: 100vh; }
+    h1 { font-size: 1.35rem; margin: 0 0 8px; }
+    .sub { color: var(--muted); font-size: 0.9rem; margin-bottom: 20px; }
+    section { background: var(--card); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    section h2 { font-size: 1rem; margin: 0 0 10px; color: var(--muted); }
+    input, textarea { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #333; background: #25252d; color: var(--text); font-size: 16px; }
+    textarea { min-height: 80px; resize: vertical; }
+    button, .btn { display: inline-block; padding: 12px 20px; border-radius: 8px; border: none; font-size: 1rem; cursor: pointer; text-decoration: none; text-align: center; }
+    .btn-primary { background: var(--accent); color: #fff; margin-top: 10px; }
+    .btn-secondary { background: #333; color: var(--text); margin-right: 8px; margin-top: 8px; }
+    .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    .msg { margin-top: 12px; padding: 10px; border-radius: 8px; font-size: 0.9rem; word-break: break-all; }
+    .msg.ok { background: rgba(34,197,94,0.15); color: var(--ok); }
+    .msg.err { background: rgba(239,68,68,0.15); color: var(--err); }
+    .download-link { margin-top: 8px; }
+    .download-link a { color: var(--accent); }
+    .shortcut-dl { font-size: 1.1rem; padding: 14px 24px; margin-bottom: 12px; }
+    .foot { color: var(--muted); font-size: 0.85rem; margin-top: 24px; }
+    .foot a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <h1>抖音去水印下载</h1>
+  <p class="sub">使用 GalaxyStream 公网 API，无需自建后端</p>
+
+  <section>
+    <h2>① 导入快捷指令（推荐）</h2>
+    <p>在 iPhone 上点击下方按钮，下载并添加到「快捷指令」。之后运行该快捷指令会直接打开本页，粘贴链接即可解析。</p>
+    <a href="抖音去水印下载.shortcut" class="btn btn-primary shortcut-dl" download="抖音去水印下载.shortcut">下载并导入快捷指令</a>
+    <p class="foot">若无法直接导入（如 iOS 15+ 限制），请使用 <a href="douyin_shortcut_galaxy.md">手动创建步骤</a>。</p>
+  </section>
+
+  <section>
+    <h2>② 解析并下载</h2>
+    <p>粘贴抖音分享链接或完整链接，点击解析后获取无水印下载地址。</p>
+    <textarea id="input" placeholder="粘贴抖音分享链接、短链或完整链接…"></textarea>
+    <button id="parse" class="btn btn-primary">解析</button>
+    <div id="out" class="msg" style="display:none;"></div>
+    <div id="dl" class="download-link" style="display:none;"></div>
+  </section>
+
+  <p class="foot">API：<code>http://source.galaxystream.online:5555</code> · 本页可部署于任意公网（如 source.galaxystream.online）供手机访问。</p>
+
+  <script>
+    (function () {
+      var API_BASE = 'http://source.galaxystream.online:5555';
+      var input = document.getElementById('input');
+      var parseBtn = document.getElementById('parse');
+      var out = document.getElementById('out');
+      var dl = document.getElementById('dl');
+
+      function showMsg(html, isErr) {
+        out.style.display = 'block';
+        out.className = 'msg ' + (isErr ? 'err' : 'ok');
+        out.innerHTML = html;
+      }
+      function showDl(url) {
+        dl.style.display = 'block';
+        dl.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener">直接下载 / 打开视频</a>';
+      }
+
+      function extractId(text) {
+        var m = (text || '').match(/\d{19}/);
+        return m ? m[0] : null;
+      }
+
+      parseBtn.addEventListener('click', function () {
+        var text = (input.value || '').trim();
+        if (!text) {
+          showMsg('请先粘贴抖音分享链接', true);
+          return;
+        }
+        parseBtn.disabled = true;
+        out.style.display = 'none';
+        dl.style.display = 'none';
+
+        function fail(msg) {
+          showMsg(msg || '解析失败', true);
+          parseBtn.disabled = false;
+        }
+
+        // 1) 先尝试从文本直接取 19 位 ID
+        var detailId = extractId(text);
+        if (!detailId) {
+          // 2) 调 /douyin/share 解析短链
+          fetch(API_BASE + '/douyin/share', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text, proxy: '' })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              var url = data && data.url;
+              if (!url) return fail(data && data.message ? data.message : '无法解析链接');
+              detailId = extractId(url);
+              if (!detailId) return fail('无法从链接中提取作品 ID');
+              fetchDetail(detailId);
+            })
+            .catch(function (e) {
+              fail('请求失败：' + (e.message || '请检查网络或 CORS') + '。可改用「手动创建快捷指令」在手机端直接调 API。');
+            });
+        } else {
+          fetchDetail(detailId);
+        }
+
+        function fetchDetail(id) {
+          fetch(API_BASE + '/douyin/detail', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ detail_id: id, cookie: '', proxy: '', source: false })
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              parseBtn.disabled = false;
+              var list = data && data.data && data.data.downloads;
+              if (!list || !list[0]) {
+                showMsg((data && data.message) || '未获取到下载地址', true);
+                return;
+              }
+              showMsg('解析成功，可点击下方链接下载。');
+              showDl(list[0]);
+            })
+            .catch(function (e) {
+              parseBtn.disabled = false;
+              fail('获取作品数据失败：' + (e.message || ''));
+            });
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

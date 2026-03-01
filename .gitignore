@@ -6,3 +6,6 @@ __pycache__/
 /.run/
 /Volume/
 !/.github/
+flask_app/config.json
+node_modules/
+quick/node_modules/

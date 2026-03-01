@@ -1,0 +1,4 @@
+{
+  "api_preset": "local",
+  "comment": "api_preset 可选: local (http://127.0.0.1:5555) | galaxy (http://source.galaxystream.online:5555)；也可用 api_base 直接写完整 URL"
+}
