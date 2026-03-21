@@ -101,6 +101,7 @@
 <li>配置文件 <code>settings.json</code> 的 <code>storage_format</code> 参数可设置数据储存格式类型，如果不设置该参数，程序不会储存任何数据至文件。</li>
 <li><code>采集作品评论数据</code>、<code>采集账号详细数据</code>、<code>采集搜索结果数据</code>、<code>采集抖音热榜数据</code> 模式必须设置 <code>storage_format</code> 参数才能正常使用。</li>
 <li>程序所有数据均储存至配置文件 <code>root</code> 参数路径下的 <code>Data</code> 文件夹。</li>
+<li>抖音 <code>实况</code> 作品默认导出为 <code>jpeg + mp4</code> 文件对；如果将 <code>live_photo_mode</code> 设置为 <code>apple</code>，则会导出为 <code>jpeg + mov</code> 文件对。</li>
 </ul>
 <h2>文本文档</h2>
 <p>项目部分功能支持从文本文档（TXT）读取链接，如需使用，请在计算机任意路径创建一个空白文本文档，然后编辑文件内容，每行输入单个链接，编辑完成后保存文件。</p>
@@ -429,6 +430,12 @@ built with gcc 14.2.0 (crosstool-NG 1.27.0.18_7458341)
 <td align="center">无</td>
 </tr>
 <tr>
+<td align="center">live_photo_mode</td>
+<td align="center">str</td>
+<td align="center">抖音 <code>实况</code> 作品导出模式；<code>pair</code> 表示导出为 <code>jpeg + mp4</code>，<code>apple</code> 表示导出为 <code>jpeg + mov</code></td>
+<td align="center">pair</td>
+</tr>
+<tr>
 <td align="center">douyin_platform</td>
 <td align="center">bool</td>
 <td align="center"><a href="#supplement"><sup>5</sup></a>是否启用抖音平台功能</td>
@@ -536,6 +543,7 @@ built with gcc 14.2.0 (crosstool-NG 1.27.0.18_7458341)
   "run_command": "6 2 1",
   "ffmpeg": "C:\\DouK-Downloader\\ffmpeg.exe",
   "live_qualities": "1",
+  "live_photo_mode": "pair",
   "douyin_platform": true,
   "tiktok_platform": true,
   "browser_info": {

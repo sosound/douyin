@@ -1092,6 +1092,8 @@ class TikTok:
     def _get_preview_image(data: dict) -> str:
         if data["type"] == _("图集"):
             return data["downloads"][0]
+        elif data["type"] == _("实况"):
+            return data["downloads"][0]["image"] if data["downloads"] else ""
         elif data["type"] == _("视频"):
             return data["static_cover"]
         return ""

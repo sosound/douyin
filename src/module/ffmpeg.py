@@ -1,7 +1,7 @@
 from pathlib import Path
 from shutil import which
 from platform import system
-from subprocess import Popen, run
+from subprocess import CalledProcessError, Popen, run
 from textwrap import dedent
 
 __all__ = ["FFMPEG"]
@@ -91,6 +91,28 @@ class FFMPEG:
                 user_agent,
             )
             self.run_command(command)
+
+    def remux_to_mov(self, source: Path, target: Path) -> bool:
+        if not self.path:
+            return False
+        try:
+            run(
+                [
+                    self.path,
+                    "-y",
+                    "-i",
+                    str(source),
+                    "-c",
+                    "copy",
+                    str(target),
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except CalledProcessError:
+            return False
+        return target.is_file()
 
     def __generate_command(
         self,

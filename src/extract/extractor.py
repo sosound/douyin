@@ -422,7 +422,7 @@ class Extractor:
                 _("实况"),
             )
             item["downloads"] = [
-                self.__classify_slides_item(
+                self.__classify_live_item(
                     i,
                 )
                 for i in images
@@ -500,6 +500,24 @@ class Extractor:
                 item,
             )[-1]
         return self.safe_extract(item, f"url_list[{IMAGE_INDEX}]")
+
+    def __classify_live_item(
+        self,
+        item: SimpleNamespace,
+    ) -> dict[str, str]:
+        return {
+            "image": self.safe_extract(
+                item,
+                f"url_list[{IMAGE_INDEX}]",
+            ),
+            "video": (
+                self.__extract_video_download(
+                    item,
+                )[-1]
+                if self.safe_extract(item, "video")
+                else ""
+            ),
+        }
 
     def __extract_video_download(
         self,

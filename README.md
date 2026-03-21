@@ -28,6 +28,7 @@
 <ul>
 <li>✅ 下载抖音无水印视频/图集</li>
 <li>✅ 下载抖音无水印实况/动图</li>
+<li>✅ 抖音实况支持导出为 <code>jpeg + mp4</code>，并可切换为 <code>jpeg + mov</code></li>
 <li>✅ 下载最高画质视频文件</li>
 <li>✅ 下载 TikTok 视频原画</li>
 <li>✅ 下载 TikTok 无水印视频/图集</li>

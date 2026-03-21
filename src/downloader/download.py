@@ -87,6 +87,7 @@ class Downloader:
         self.recorder = params.recorder
         self.timeout = params.timeout
         self.ffmpeg = params.ffmpeg
+        self.live_photo_mode = params.live_photo_mode
         self.cache = params.cache
         self.truncate = params.truncate
         self.general_progress_object: Callable = self.init_general_progress(
@@ -296,6 +297,7 @@ class Downloader:
             skipped_video=set(),
             downloaded_live=set(),
             skipped_live=set(),
+            live_motion_convert=[],
         )
         tasks = []
         for item in data:
@@ -316,6 +318,7 @@ class Downloader:
                 "item": item,
                 "temp_root": temp_root,
                 "actual_root": actual_root,
+                "live_motion_convert": count.live_motion_convert,
             }
             if (t := item["type"]) == _("图集"):
                 await self.download_image(
@@ -330,9 +333,7 @@ class Downloader:
                     skipped=count.skipped_video,
                 )
             elif t == _("实况"):
-                await self.download_image(
-                    suffix="mp4",
-                    type_=_("实况"),
+                await self.download_live_photo(
                     **params,
                     skipped=count.skipped_live,
                 )
@@ -346,6 +347,7 @@ class Downloader:
         await self.downloader_chart(
             tasks, count, self.general_progress_object(), **kwargs
         )
+        self.finalize_live_photo_exports(count.live_motion_convert)
         self.statistics_count(count)
 
     async def downloader_chart(
@@ -486,6 +488,157 @@ class Downloader:
                 suffix,
             )
         )
+
+    async def download_live_photo(
+        self,
+        tasks: list,
+        name: str,
+        id_: str,
+        item: SimpleNamespace,
+        skipped: set,
+        temp_root: Path,
+        actual_root: Path,
+        live_motion_convert: list,
+    ) -> None:
+        if not item["downloads"]:
+            self.log.error(
+                _("【实况】{name} 提取文件下载地址失败，跳过下载").format(name=name)
+            )
+            return
+        apple_mode = self.live_photo_mode == "apple"
+        for index, live_item in enumerate(
+            item["downloads"],
+            start=1,
+        ):
+            if await self.is_downloaded(id_):
+                skipped.add(id_)
+                self.log.info(
+                    _("【实况】{name} 存在下载记录，跳过下载").format(name=name)
+                )
+                break
+            image_url = live_item.get("image", "")
+            video_url = live_item.get("video", "")
+            if not image_url and not video_url:
+                self.log.error(
+                    _("【实况】{name}_{index} 提取文件下载地址失败，跳过下载").format(
+                        name=name, index=index
+                    )
+                )
+                continue
+            if image_url and not self.is_exists(
+                p := actual_root.with_name(
+                    f"{name}_{index}.jpeg" if apple_mode else f"{name}_{index}_photo.jpeg"
+                )
+            ):
+                tasks.append(
+                    (
+                        image_url,
+                        temp_root.with_name(
+                            f"{name}_{index}.jpeg"
+                            if apple_mode
+                            else f"{name}_{index}_photo.jpeg"
+                        ),
+                        p,
+                        (
+                            f"【{_('实况')}】{name}_{index}"
+                            if apple_mode
+                            else f"【{_('实况')}】{name}_{index}_photo"
+                        ),
+                        id_,
+                        "jpeg",
+                    )
+                )
+            elif image_url:
+                self.log.info(
+                    _("【实况】{name}_{index} 图片文件已存在，跳过下载").format(
+                        name=name, index=index
+                    )
+                )
+                self.log.info(f"文件路径: {p.resolve()}", False)
+                skipped.add(id_)
+            if video_url and not self.is_exists(
+                p := actual_root.with_name(
+                    f"{name}_{index}.mp4" if apple_mode else f"{name}_{index}_motion.mp4"
+                )
+            ):
+                tasks.append(
+                    (
+                        video_url,
+                        temp_root.with_name(
+                            f"{name}_{index}.mp4"
+                            if apple_mode
+                            else f"{name}_{index}_motion.mp4"
+                        ),
+                        p,
+                        (
+                            f"【{_('实况')}】{name}_{index}_motion"
+                            if apple_mode
+                            else f"【{_('实况')}】{name}_{index}_motion"
+                        ),
+                        id_,
+                        "mp4",
+                    )
+                )
+                if apple_mode:
+                    live_motion_convert.append(
+                        (
+                            p,
+                            actual_root.with_name(f"{name}_{index}.mov"),
+                            name,
+                            index,
+                        )
+                    )
+            elif video_url:
+                self.log.info(
+                    _("【实况】{name}_{index} 动态文件已存在，跳过下载").format(
+                        name=name, index=index
+                    )
+                )
+                self.log.info(f"文件路径: {p.resolve()}", False)
+                skipped.add(id_)
+                if apple_mode:
+                    live_motion_convert.append(
+                        (
+                            p,
+                            actual_root.with_name(f"{name}_{index}.mov"),
+                            name,
+                            index,
+                        )
+                    )
+
+    def finalize_live_photo_exports(
+        self,
+        tasks: list[tuple[Path, Path, str, int]],
+    ) -> None:
+        if self.live_photo_mode != "apple" or not tasks:
+            return
+        if not self.ffmpeg.path:
+            self.log.warning(
+                _("live_photo_mode 已设置为 apple，但未检测到有效的 ffmpeg，将保留 MP4 动态文件"),
+            )
+            return
+        for source, target, name, index in tasks:
+            if not source.is_file():
+                continue
+            if target.is_file():
+                source.unlink(missing_ok=True)
+                continue
+            if self.ffmpeg.remux_to_mov(source, target):
+                source.unlink(missing_ok=True)
+                self.log.info(
+                    _("【实况】{name}_{index} 已导出 Apple 风格动态文件").format(
+                        name=name,
+                        index=index,
+                    )
+                )
+                self.log.info(f"文件路径: {target.resolve()}", False)
+            else:
+                self.log.warning(
+                    _("【实况】{name}_{index} 导出 MOV 失败，将保留 MP4 动态文件").format(
+                        name=name,
+                        index=index,
+                    )
+                )
 
     def download_music(
         self,

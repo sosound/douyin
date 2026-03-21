@@ -100,6 +100,7 @@ class Parameter:
         owner_url_tiktok: dict,
         live_qualities: str,
         ffmpeg: str,
+        live_photo_mode: str,
         recorder: "DownloadRecorder",
         browser_info: dict,
         browser_info_tiktok: dict,
@@ -176,6 +177,7 @@ class Parameter:
         self.run_command = self.__check_run_command(run_command)
         self.ffmpeg = self.__generate_ffmpeg_object(ffmpeg)
         self.live_qualities = self.__check_live_qualities(live_qualities)
+        self.live_photo_mode = self.__check_live_photo_mode(live_photo_mode)
         self.douyin_platform = self.check_bool_true(
             douyin_platform,
         )
@@ -243,6 +245,7 @@ class Parameter:
             "run_command": self.__check_run_command,
             "ffmpeg": self.__generate_ffmpeg_object,
             "live_qualities": self.__check_live_qualities,
+            "live_photo_mode": self.__check_live_photo_mode,
             "douyin_platform": self.check_bool_true,
             "tiktok_platform": self.check_bool_true,
         }
@@ -850,6 +853,7 @@ class Parameter:
             "max_pages": self.max_pages,
             "run_command": " ".join(self.run_command[::-1]),
             "ffmpeg": self.ffmpeg.path or "",
+            "live_photo_mode": self.live_photo_mode,
         }
 
     async def set_settings_data(
@@ -1144,6 +1148,21 @@ class Parameter:
             ),
         )
         return ""
+
+    def __check_live_photo_mode(self, live_photo_mode: str) -> str:
+        if live_photo_mode in {"pair", "apple"}:
+            self.logger.info(
+                f"live_photo_mode 参数已设置为 {live_photo_mode}",
+                False,
+            )
+            return live_photo_mode
+        if live_photo_mode:
+            self.logger.warning(
+                _(
+                    "live_photo_mode 参数 {live_photo_mode} 设置错误，程序将使用默认值：pair"
+                ).format(live_photo_mode=live_photo_mode),
+            )
+        return "pair"
 
     def __check_cookie_state(self, tiktok=False) -> bool:
         if tiktok:

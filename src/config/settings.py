@@ -88,6 +88,7 @@ class Settings:
         "run_command": "",
         "ffmpeg": "",
         "live_qualities": "",
+        "live_photo_mode": "pair",
         "douyin_platform": True,
         "tiktok_platform": True,
         "browser_info": {
