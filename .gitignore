@@ -9,3 +9,4 @@ __pycache__/
 flask_app/config.json
 node_modules/
 quick/node_modules/
+.gitnexus
