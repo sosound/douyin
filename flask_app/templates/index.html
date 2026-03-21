@@ -221,13 +221,26 @@
         html += `<dt>点赞</dt><dd>${escapeHtml(d.digg_count ?? d.statistics?.digg_count ?? "-")}</dd>`;
         html += `<dt>评论</dt><dd>${escapeHtml(d.comment_count ?? d.statistics?.comment_count ?? "-")}</dd>`;
         html += `</dl>`;
-        const urls = Array.isArray(d.downloads) ? d.downloads : (d.downloads ? [d.downloads] : []);
-        if (urls.length) {
+        const downloads = Array.isArray(d.downloads) ? d.downloads : (d.downloads ? [d.downloads] : []);
+        if (downloads.length) {
           html += `<div class="downloads"><strong>下载：</strong>`;
-          urls.forEach((url, i) => {
-            const proxyUrl = "/download?url=" + encodeURIComponent(url);
-            const label = urls.length > 1 ? `下载 ${i + 1}` : "点击下载";
-            html += `<a href="${proxyUrl}" target="_blank" rel="noopener">${label}</a>`;
+          downloads.forEach((item, i) => {
+            if (typeof item === "string") {
+              const proxyUrl = "/download?url=" + encodeURIComponent(item);
+              const label = downloads.length > 1 ? `下载 ${i + 1}` : "点击下载";
+              html += `<a href="${proxyUrl}" target="_blank" rel="noopener">${label}</a>`;
+              return;
+            }
+            if (item && typeof item === "object") {
+              if (item.image) {
+                const proxyUrl = "/download?url=" + encodeURIComponent(item.image);
+                html += `<a href="${proxyUrl}" target="_blank" rel="noopener">下载主图 ${i + 1}</a>`;
+              }
+              if (item.video) {
+                const proxyUrl = "/download?url=" + encodeURIComponent(item.video);
+                html += `<a href="${proxyUrl}" target="_blank" rel="noopener">下载动态部分 ${i + 1}</a>`;
+              }
+            }
           });
           html += `</div>`;
         }
