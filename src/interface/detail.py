@@ -1,3 +1,5 @@
+from json import dump
+from pathlib import Path
 from typing import Callable
 from typing import TYPE_CHECKING
 from typing import Union
@@ -77,10 +79,27 @@ class Detail(API):
                 self.log.warning(error_text)
             else:
                 self.response = d
+                self.dump_detail_response(data_dict, d)
         except KeyError:
             self.log.error(
                 _("数据解析失败，请告知作者处理: {data}").format(data=data_dict)
             )
+
+    def dump_detail_response(self, data_dict: dict, detail: dict) -> None:
+        if not getattr(self.runtime_params, "detail_dump", False):
+            return
+        aweme_id = (
+            self.detail_id
+            or detail.get("aweme_id")
+            or detail.get("awemeId")
+            or "unknown"
+        )
+        dump_dir = Path(self.runtime_params.cache).joinpath("detail_dump")
+        dump_dir.mkdir(exist_ok=True)
+        dump_path = dump_dir.joinpath(f"aweme_detail_{aweme_id}.json")
+        with dump_path.open("w", encoding="utf-8") as f:
+            dump(data_dict, f, indent=2, ensure_ascii=False)
+        self.log.info(f"作品详情原始响应已保存: {dump_path}", False)
 
 
 async def test():

@@ -101,6 +101,7 @@ class Parameter:
         live_qualities: str,
         ffmpeg: str,
         live_photo_mode: str,
+        detail_dump: bool,
         recorder: "DownloadRecorder",
         browser_info: dict,
         browser_info_tiktok: dict,
@@ -178,6 +179,7 @@ class Parameter:
         self.ffmpeg = self.__generate_ffmpeg_object(ffmpeg)
         self.live_qualities = self.__check_live_qualities(live_qualities)
         self.live_photo_mode = self.__check_live_photo_mode(live_photo_mode)
+        self.detail_dump = self.check_bool_false(detail_dump)
         self.douyin_platform = self.check_bool_true(
             douyin_platform,
         )
@@ -246,6 +248,7 @@ class Parameter:
             "ffmpeg": self.__generate_ffmpeg_object,
             "live_qualities": self.__check_live_qualities,
             "live_photo_mode": self.__check_live_photo_mode,
+            "detail_dump": self.check_bool_false,
             "douyin_platform": self.check_bool_true,
             "tiktok_platform": self.check_bool_true,
         }
@@ -854,6 +857,7 @@ class Parameter:
             "run_command": " ".join(self.run_command[::-1]),
             "ffmpeg": self.ffmpeg.path or "",
             "live_photo_mode": self.live_photo_mode,
+            "detail_dump": self.detail_dump,
         }
 
     async def set_settings_data(

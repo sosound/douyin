@@ -97,6 +97,7 @@ class Settings(BaseModel):
     ffmpeg: str | None = None
     live_qualities: str | None = None
     live_photo_mode: str | None = None
+    detail_dump: bool | None = None
     douyin_platform: bool | None = None
     tiktok_platform: bool | None = None
     browser_info: BrowserInfo | None = None

@@ -71,6 +71,7 @@ class API:
         *args,
         **kwargs,
     ):
+        self.runtime_params = params
         self.headers = params.headers.copy()
         self.log = params.logger
         self.ab = params.ab

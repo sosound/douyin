@@ -89,6 +89,7 @@ class Settings:
         "ffmpeg": "",
         "live_qualities": "",
         "live_photo_mode": "pair",
+        "detail_dump": False,
         "douyin_platform": True,
         "tiktok_platform": True,
         "browser_info": {

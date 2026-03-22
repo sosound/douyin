@@ -23,6 +23,7 @@ from ..custom import (
     MAX_WORKERS,
     PROGRESS,
 )
+from ..module import AppleLivePhotoProcessor
 from ..tools import (
     CacheError,
     DownloaderError,
@@ -88,6 +89,7 @@ class Downloader:
         self.timeout = params.timeout
         self.ffmpeg = params.ffmpeg
         self.live_photo_mode = params.live_photo_mode
+        self.apple_live_photo = AppleLivePhotoProcessor(self.log)
         self.cache = params.cache
         self.truncate = params.truncate
         self.general_progress_object: Callable = self.init_general_progress(
@@ -405,6 +407,7 @@ class Downloader:
         actual_root: Path,
         suffix: str = "jpeg",
         type_: str = _("图集"),
+        **kwargs,
     ) -> None:
         if not item["downloads"]:
             self.log.error(
@@ -456,6 +459,7 @@ class Downloader:
         actual_root: Path,
         suffix: str = "mp4",
         type_: str = _("视频"),
+        **kwargs,
     ) -> None:
         if not item["downloads"]:
             self.log.error(
@@ -582,6 +586,7 @@ class Downloader:
                 if apple_mode:
                     live_motion_convert.append(
                         (
+                            actual_root.with_name(f"{name}_{index}.jpeg"),
                             p,
                             actual_root.with_name(f"{name}_{index}.mov"),
                             name,
@@ -599,6 +604,7 @@ class Downloader:
                 if apple_mode:
                     live_motion_convert.append(
                         (
+                            actual_root.with_name(f"{name}_{index}.jpeg"),
                             p,
                             actual_root.with_name(f"{name}_{index}.mov"),
                             name,
@@ -608,20 +614,21 @@ class Downloader:
 
     def finalize_live_photo_exports(
         self,
-        tasks: list[tuple[Path, Path, str, int]],
+        tasks: list[tuple[Path, Path, Path, str, int]],
     ) -> None:
         if self.live_photo_mode != "apple" or not tasks:
             return
-        if not self.ffmpeg.path:
+        ffmpeg_missing = not self.ffmpeg.path
+        if ffmpeg_missing:
             self.log.warning(
                 _("live_photo_mode 已设置为 apple，但未检测到有效的 ffmpeg，将保留 MP4 动态文件"),
             )
-            return
-        for source, target, name, index in tasks:
-            if not source.is_file():
-                continue
+        for photo, source, target, name, index in tasks:
             if target.is_file():
                 source.unlink(missing_ok=True)
+                self.apple_live_photo.process(photo, target)
+                continue
+            if ffmpeg_missing or not source.is_file():
                 continue
             if self.ffmpeg.remux_to_mov(source, target):
                 source.unlink(missing_ok=True)
@@ -632,6 +639,7 @@ class Downloader:
                     )
                 )
                 self.log.info(f"文件路径: {target.resolve()}", False)
+                self.apple_live_photo.process(photo, target)
             else:
                 self.log.warning(
                     _("【实况】{name}_{index} 导出 MOV 失败，将保留 MP4 动态文件").format(
