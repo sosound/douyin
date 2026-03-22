@@ -7,3 +7,8 @@ class Detail(APIModel):
 
 class DetailTikTok(Detail):
     pass
+
+
+class DetailDownload(Detail):
+    live_photo_mode: str = "apple"
+    folder_name: str = ""

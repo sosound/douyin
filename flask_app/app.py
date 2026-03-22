@@ -3,10 +3,20 @@ Flask 应用：调用 DouK-Downloader API 获取抖音作品并下载
 """
 import re
 import time
+from pathlib import Path
 from urllib.parse import quote, urlparse
 
 import httpx
-from flask import Flask, Response, jsonify, redirect, render_template, request, session
+from flask import (
+    Flask,
+    Response,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    send_from_directory,
+    session,
+)
 
 from config import API_BASE, DOWNLOAD_TIMEOUT
 
@@ -31,6 +41,7 @@ DETAIL_LINK_RE = re.compile(
 # 允许：完整短链、以及分享文案里常见的“无协议短链”
 SHORT_LINK_RE = re.compile(r"(?:https?://)?v\.douyin\.com/[0-9A-Za-z]+/?")
 HTML_START = (b"<!doctype", b"<html", b"<meta", b"<script")
+WEB_EXPORT_ROOT = Path(__file__).resolve().parents[1].joinpath(".web_exports")
 
 
 def extract_detail_id(text: str) -> str | None:
@@ -71,6 +82,26 @@ def fetch_detail(detail_id: str, cookie: str = "", proxy: str = "") -> dict:
             f"{API_BASE}/douyin/detail",
             json={"detail_id": detail_id, "cookie": cookie, "proxy": proxy, "source": False},
             timeout=30.0,
+        )
+        return resp.json()
+    except httpx.RequestError as e:
+        return {"message": f"请求失败: {e!s}", "data": None}
+    except Exception as e:
+        return {"message": f"错误: {e!s}", "data": None}
+
+
+def export_detail(detail_id: str, cookie: str = "", proxy: str = "") -> dict:
+    """调用 /douyin/detail/download 导出并可选导入媒体资产"""
+    try:
+        resp = httpx.post(
+            f"{API_BASE}/douyin/detail/download",
+            json={
+                "detail_id": detail_id,
+                "cookie": cookie,
+                "proxy": proxy,
+                "live_photo_mode": "apple",
+            },
+            timeout=180.0,
         )
         return resp.json()
     except httpx.RequestError as e:
@@ -155,6 +186,81 @@ def api_detail():
         "data": result["data"],
         "detail_id": detail_id,
     })
+
+
+@app.route("/api/export-live", methods=["POST"])
+def api_export_live():
+    return api_export_media()
+
+
+@app.route("/api/export-media", methods=["POST"])
+def api_export_media():
+    data = request.get_json() or {}
+    link = (data.get("link") or "").strip()
+    cookie = (data.get("cookie") or "").strip()
+    proxy = (data.get("proxy") or "").strip()
+
+    if not link:
+        return jsonify({"success": False, "message": "请输入作品链接", "data": None})
+
+    if cookie:
+        session["douyin_cookie"] = cookie
+    if proxy:
+        session["douyin_proxy"] = proxy
+
+    detail_id = extract_detail_id(link)
+    if not detail_id:
+        resolved = resolve_short_link(link, proxy)
+        if resolved:
+            link = resolved
+            detail_id = extract_detail_id(link)
+
+    if not detail_id:
+        return jsonify({
+            "success": False,
+            "message": "无法提取作品 ID，请确认链接格式正确",
+            "data": None,
+        })
+
+    result = export_detail(detail_id, cookie, proxy)
+    payload = result.get("data")
+    if not payload:
+        return jsonify({
+            "success": False,
+            "message": result.get("message", "导出失败"),
+            "data": None,
+            "detail_id": detail_id,
+        })
+
+    files = []
+    folder_name = payload.get("folder_name", "")
+    for item in payload.get("files", []):
+        name = item.get("name", "")
+        if not name:
+            continue
+        files.append({
+            "name": name,
+            "suffix": item.get("suffix", ""),
+            "url": f"/exports/{quote(folder_name)}/{quote(name)}",
+        })
+
+    return jsonify({
+        "success": True,
+        "message": result.get("message", "导出并导入成功！"),
+        "data": {
+            "detail_id": detail_id,
+            "folder_name": folder_name,
+            "files": files,
+        },
+    })
+
+
+@app.route("/exports/<path:folder>/<path:filename>")
+def export_file(folder: str, filename: str):
+    root = WEB_EXPORT_ROOT.joinpath(folder)
+    if not root.is_dir():
+        return redirect(f"/?error={quote('导出目录不存在')}")
+    return send_from_directory(root, filename, as_attachment=True)
 
 
 @app.route("/download")

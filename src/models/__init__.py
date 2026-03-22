@@ -7,7 +7,7 @@ from .search import (
 )
 from .settings import Settings
 from .share import ShortUrl
-from .detail import Detail, DetailTikTok
+from .detail import Detail, DetailDownload, DetailTikTok
 from .account import Account, AccountTiktok
 from .comment import Comment
 from .reply import Reply
@@ -24,6 +24,7 @@ __all__ = (
     "UrlResponse",
     "ShortUrl",
     "Detail",
+    "DetailDownload",
     "DetailTikTok",
     "Account",
     "AccountTiktok",

@@ -299,7 +299,9 @@ class Downloader:
             skipped_video=set(),
             downloaded_live=set(),
             skipped_live=set(),
+            video_import=[],
             live_motion_convert=[],
+            live_static_import=[],
         )
         tasks = []
         for item in data:
@@ -333,11 +335,13 @@ class Downloader:
                     **params,
                     type_=_("视频"),
                     skipped=count.skipped_video,
+                    video_import=count.video_import,
                 )
             elif t == _("实况"):
                 await self.download_live_photo(
                     **params,
                     skipped=count.skipped_live,
+                    live_static_import=count.live_static_import,
                 )
             else:
                 raise DownloaderError
@@ -350,6 +354,8 @@ class Downloader:
             tasks, count, self.general_progress_object(), **kwargs
         )
         self.finalize_live_photo_exports(count.live_motion_convert)
+        self.finalize_video_imports(count.video_import)
+        self.finalize_static_photo_imports(count.live_static_import)
         self.statistics_count(count)
 
     async def downloader_chart(
@@ -457,6 +463,7 @@ class Downloader:
         skipped: set,
         temp_root: Path,
         actual_root: Path,
+        video_import: list,
         suffix: str = "mp4",
         type_: str = _("视频"),
         **kwargs,
@@ -492,6 +499,7 @@ class Downloader:
                 suffix,
             )
         )
+        video_import.append(p)
 
     async def download_live_photo(
         self,
@@ -503,6 +511,7 @@ class Downloader:
         temp_root: Path,
         actual_root: Path,
         live_motion_convert: list,
+        live_static_import: list,
     ) -> None:
         if not item["downloads"]:
             self.log.error(
@@ -560,6 +569,10 @@ class Downloader:
                 )
                 self.log.info(f"文件路径: {p.resolve()}", False)
                 skipped.add(id_)
+            if apple_mode and image_url and not video_url:
+                live_static_import.append(
+                    actual_root.with_name(f"{name}_{index}.jpeg")
+                )
             if video_url and not self.is_exists(
                 p := actual_root.with_name(
                     f"{name}_{index}.mp4" if apple_mode else f"{name}_{index}_motion.mp4"
@@ -647,6 +660,26 @@ class Downloader:
                         index=index,
                     )
                 )
+
+    def finalize_static_photo_imports(self, photos: list[Path]) -> None:
+        if self.live_photo_mode != "apple" or not photos:
+            return
+        imported = set()
+        for photo in photos:
+            if photo in imported or not photo.is_file():
+                continue
+            imported.add(photo)
+            self.apple_live_photo.import_static_photo(photo)
+
+    def finalize_video_imports(self, videos: list[Path]) -> None:
+        if self.live_photo_mode != "apple" or not videos:
+            return
+        imported = set()
+        for video in videos:
+            if video in imported or not video.is_file():
+                continue
+            imported.add(video)
+            self.apple_live_photo.import_video(video)
 
     def download_music(
         self,

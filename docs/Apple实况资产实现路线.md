@@ -39,6 +39,7 @@
 - `apple` 模式导出结束后会生成 `.livephoto.json` 资产清单
 - 在 macOS 上检测到 `Quartz / AVFoundation` 时，会为 `jpeg` 写入 Apple `ContentIdentifier`
 - 检测到 `exiftool` 时，会为 `.mov` 写入匹配的 `ContentIdentifier`
+- 在 macOS 上检测到 `AVFoundation / CoreMedia` 时，会为 `.mov` 追加 `still-image-time` timed metadata track
 - 在 macOS 上显式设置 `DOUK_APPLE_LIVE_IMPORT=1` 时，会优先通过 PyObjC PhotoKit 把 `jpeg + mov` 作为 `photo + pairedVideo` 导入 Photos；若不可用，再回退到 Swift 辅助脚本
 
 ## 路线结论
@@ -193,7 +194,12 @@
 - 通过 PhotoKit 导入 `photo + video` 可以成功
 - 仅有 `jpeg + mov + MOV ContentIdentifier` 时，`photo + pairedVideo` 会被 Photos 以 `PHPhotosErrorDomain Code=3302` 拒绝
 - 当 JPEG 侧补齐 Apple `ContentIdentifier`，且 MOV 侧也具备匹配的 `ContentIdentifier` 后，PhotoKit `photo + pairedVideo` 导入已实测成功
-- `StillImageTime` 元数据轨道可以写出，但按当前实测结果，它不是 `pairedVideo` 被 Photos 接受的硬门槛
+- `still-image-time` 元数据轨道已经可以稳定写出，并能在 `ffprobe` 中看到第 3 条 `mebx` metadata stream
+- `StillImageTime` 元数据轨道不是 `pairedVideo` 被 Photos 接受的硬门槛
+- 动态视频中的音频流可以完整保留到最终 `.mov`
+- 但按当前实测结果，即使 `.mov` 中保留了 AAC 音轨，且已经补齐 `ContentIdentifier + still-image-time`，导入 `照片.app` 后仍不能像 iPhone 原生拍摄的 Live Photo 那样播放声音
+- 对多张实况样本，`jpeg + mov + ContentIdentifier` 的批量导出是稳定的
+- 但 `still-image-time` 在批量样本上的写入当前仍不稳定，应视为 best-effort，而不是稳定能力
 
 建议新增配置项：
 
@@ -214,6 +220,95 @@
 - 主图 EXIF 时间与视频时间字段同步
 
 这一步可以排在后面，因为它属于“体验优化”，不是第一阶段的落地门槛。
+
+### 第四阶段：原生 Live Photo 对照分析
+
+目标：
+
+- 确认为什么当前导入型实况已经“可识别、可长按动、可保留音轨”，但 `照片.app` 仍不播放声音
+
+当前阶段性判断：
+
+- 问题不在抖音上游是否携带音频
+- 问题也不在当前导出链路是否把音频保留下来
+- 更可能的差异在于 Apple 原生拍摄实况资产中仍存在额外的 QuickTime atoms / metadata / 导入语义
+
+后续建议：
+
+1. 找一组 iPhone 原生拍摄的 Live Photo 资产对做本地对照
+2. 并排比较原生 `.MOV` 与当前导出 `.mov` 的 container atoms / metadata tracks / tag 结构
+3. 仅在发现明确差异后，再评估是否值得继续模拟
+
+在没有完成原生资产对照前，项目不应再将“实况有声播放”表述为当前能力。
+
+## 当前验证进展（2026-03-22）
+
+本轮已经完成以下闭环验证：
+
+1. 真实抖音 `note` 型实况作品可提取为 `image + video`
+2. 一类落地页为 `/video/...`、但产品侧表现为动图的作品，也已能识别为 `实况`
+3. `apple` 模式可以导出：
+   - `jpeg`
+   - `mov`
+   - `.livephoto.json`
+4. `jpeg` 与 `mov` 可以写入匹配的 `ContentIdentifier`
+5. `mov` 可追加 `still-image-time` timed metadata track
+6. PhotoKit 已可把它们作为 `photo + pairedVideo` 导入 `照片.app`
+7. 多张实况样本已验证可以批量导出成 4 组 `jpeg + mov`
+
+本轮同时完成了一个重要边界确认：
+
+- 抖音实况动态视频中的音频流可以保留到最终 `.mov`
+- 但当前导入型 Live Photo 仍未达到“像 iPhone 原生实况那样带声音播放”的效果
+
+此外，还完成了一个收口性验证：
+
+- 多张实况样本中的 4 个 `.mov` 均保留了 `aac / 44100 Hz / 双声道` 音轨
+- 但批量写入 `still-image-time` timed metadata track 当前仍然不稳定
+- 因此该能力现阶段不应纳入对外能力描述
+
+因此，当前最准确的能力描述应当是：
+
+- 已实现“Apple 可接受的实况资产导入”
+- 已实现“动态视频音轨保留”
+- 已实现“多张实况的批量导出”
+- 尚未实现“原生 Live Photo 级别的声音播放体验”
+- 尚未实现“批量稳定写入 still-image-time 元数据轨”
+
+## 当前收口结论
+
+截至 `2026-03-22`，本轮探索建议先收口到以下结论：
+
+1. 抖音实况的公开上游模型可以稳定视为：
+   - `静态图 + 动态视频`
+2. 当前项目已经能够把这组资源稳定转换为：
+   - `jpeg + mov`
+   - 匹配的 `ContentIdentifier`
+   - 可导入 `照片.app` 的 `photo + pairedVideo`
+3. 动态视频中的音频可以稳定保留到最终 `.mov`
+4. 但导入 `照片.app` 后，仍不能复现 iPhone 原生实况的有声播放体验
+5. `still-image-time` 在单条短样本上可写出，但在批量多张实况样本上仍不稳定
+
+因此，当前最稳妥的项目表述应当是：
+
+- 已支持 Apple 实况资产导入
+- 已支持音轨保留
+- 不承诺 `照片.app / iPhone` 中的有声播放
+- 不承诺批量样本上的 `still-image-time` 稳定写入
+
+## 暂停前建议
+
+如果后续重新开启这一方向，建议优先顺序调整为：
+
+1. 先获取一组 iPhone 原生拍摄的 Live Photo 资产做对照
+2. 再决定是否继续追 `still-image-time` 与更深层 QuickTime metadata
+3. 在此之前，不建议继续在当前 PyObjC `AVAssetReader/Writer` 路线中反复打磨
+
+原因：
+
+- 当前收益已经明显递减
+- Swift 原生小工具路线又受限于本机 SDK / toolchain 版本不匹配
+- 继续局部试错，很可能重复投入而不产生新的确定性结论
 
 ## 为什么不建议把目标继续定义成“单文件”
 
@@ -244,4 +339,4 @@
 
 ## 一句话结论
 
-`jpeg + mov` 不是终点；真正的目标应当是“把它变成一组可被 Apple Photos 接受并同步到 iPhone 的实况资产”。这条路线的关键不是“合并文件”，而是“补齐配对关系、元数据和导入链路”。`
+`jpeg + mov` 不是终点；真正的目标应当是“把它变成一组可被 Apple Photos 接受并同步到 iPhone 的实况资产”。当前已经完成导入链路、批量导出与音轨保留验证，但“原生 Live Photo 级别的有声播放”和“批量稳定 still-image-time”仍未攻克。`

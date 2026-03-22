@@ -17,6 +17,7 @@ class AppleLivePhotoImporter:
             .joinpath("tools", "apple", "import_live_photo.swift")
         )
         self.swift = which("xcrun") or which("swift")
+        self.osascript = which("osascript")
         self.photos = None
         self.foundation = None
         if system() == "Darwin":
@@ -29,6 +30,29 @@ class AppleLivePhotoImporter:
             else:
                 self.photos = Photos
                 self.foundation = Foundation
+
+    def _authorized_access_levels(self) -> tuple[int, ...]:
+        if not self.photos:
+            return ()
+        levels = []
+        add_only = getattr(self.photos, "PHAccessLevelAddOnly", None)
+        read_write = getattr(self.photos, "PHAccessLevelReadWrite", None)
+        if add_only is not None:
+            levels.append(add_only)
+        if read_write is not None and read_write not in levels:
+            levels.append(read_write)
+        return tuple(levels) or (1, 2)
+
+    def _photos_access_allowed(self) -> bool:
+        if not self.photos:
+            return False
+        for level in self._authorized_access_levels():
+            status = self.photos.PHPhotoLibrary.authorizationStatusForAccessLevel_(
+                level
+            )
+            if status in (3, 4):
+                return True
+        return False
 
     @staticmethod
     def _check_enabled() -> bool:
@@ -75,11 +99,45 @@ class AppleLivePhotoImporter:
             self.logger.info("Apple 实况已导入 Photos", False)
         return True
 
+    def import_photo(self, photo: Path) -> bool:
+        if not self.enabled or system() != "Darwin":
+            return False
+        if self.photos and self.foundation:
+            if self.import_photo_with_pyobjc(photo):
+                return True
+            if self.osascript:
+                self.logger.warning(
+                    "静态图片的 PhotoKit 导入失败，已回退到 Photos AppleScript 导入"
+                )
+                return self.import_photo_with_osascript(photo)
+            return False
+        if self.osascript:
+            return self.import_photo_with_osascript(photo)
+        self.logger.warning("当前环境缺少可用的 Photos 导入桥，已跳过静态图片导入")
+        return False
+
+    def import_video(self, video: Path) -> bool:
+        if not self.enabled or system() != "Darwin":
+            return False
+        if self.photos and self.foundation:
+            if self.import_video_with_pyobjc(video):
+                return True
+            if self.osascript:
+                self.logger.warning(
+                    "视频的 PhotoKit 导入失败，已回退到 Photos AppleScript 导入"
+                )
+                return self.import_video_with_osascript(video)
+            return False
+        if self.osascript:
+            return self.import_video_with_osascript(video)
+        self.logger.warning("当前环境缺少可用的 Photos 导入桥，已跳过视频导入")
+        return False
+
     def import_pair_with_pyobjc(self, photo: Path, motion: Path) -> bool:
-        status = self.photos.PHPhotoLibrary.authorizationStatusForAccessLevel_(2)
-        if status not in (3, 4):
+        if not self._photos_access_allowed():
             self.logger.warning(
-                f"Photos 权限状态不允许导入 Apple 实况，当前状态码: {status}"
+                "Photos 权限状态不允许导入 Apple 实况，"
+                f"当前状态码: {[self.photos.PHPhotoLibrary.authorizationStatusForAccessLevel_(level) for level in self._authorized_access_levels()]}"
             )
             return False
 
@@ -135,3 +193,157 @@ class AppleLivePhotoImporter:
             f"{result['error'] or 'unknown error'}"
         )
         return False
+
+    def import_photo_with_pyobjc(self, photo: Path) -> bool:
+        if not self._photos_access_allowed():
+            self.logger.warning(
+                "Photos 权限状态不允许导入静态图片，"
+                f"当前状态码: {[self.photos.PHPhotoLibrary.authorizationStatusForAccessLevel_(level) for level in self._authorized_access_levels()]}"
+            )
+            return False
+
+        photo_url = self.foundation.NSURL.fileURLWithPath_(str(photo.resolve()))
+        done = Event()
+        result = {"success": False, "error": None, "id": None}
+
+        def change_block():
+            request = self.photos.PHAssetCreationRequest.creationRequestForAsset()
+            photo_options = (
+                self.photos.PHAssetResourceCreationOptions.alloc().init()
+            )
+            photo_options.setShouldMoveFile_(False)
+            request.addResourceWithType_fileURL_options_(
+                self.photos.PHAssetResourceTypePhoto,
+                photo_url,
+                photo_options,
+            )
+            placeholder = request.placeholderForCreatedAsset()
+            if placeholder is not None:
+                result["id"] = str(placeholder.localIdentifier())
+
+        def completion(success, error):
+            result["success"] = bool(success)
+            result["error"] = None if error is None else str(error)
+            done.set()
+
+        self.photos.PHPhotoLibrary.sharedPhotoLibrary().performChanges_completionHandler_(
+            change_block,
+            completion,
+        )
+        if not done.wait(20):
+            self.logger.warning("静态图片导入超时")
+            return False
+        if result["success"]:
+            self.logger.info(
+                f"静态图片已导入 Photos: {result['id'] or 'created'}",
+                False,
+            )
+            return True
+        self.logger.warning(
+            "PhotoKit 拒绝了当前静态图片: "
+            f"{result['error'] or 'unknown error'}"
+        )
+        return False
+
+    def import_photo_with_osascript(self, photo: Path) -> bool:
+        if not self.osascript:
+            self.logger.warning("未检测到 osascript，已跳过静态图片导入")
+            return False
+        path = str(photo.resolve()).replace("\\", "\\\\").replace('"', '\\"')
+        command = [
+            self.osascript,
+            "-e",
+            f'tell application "Photos" to import {{POSIX file "{path}"}} with skip check duplicates',
+        ]
+        try:
+            run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except CalledProcessError as exc:
+            message = exc.stderr.strip() or exc.stdout.strip()
+            self.logger.warning(
+                f"AppleScript 导入静态图片到 Photos 失败: {message or 'unknown error'}"
+            )
+            return False
+        self.logger.info(f"静态图片已导入 Photos: {photo.name}", False)
+        return True
+
+    def import_video_with_pyobjc(self, video: Path) -> bool:
+        if not self._photos_access_allowed():
+            self.logger.warning(
+                "Photos 权限状态不允许导入视频，"
+                f"当前状态码: {[self.photos.PHPhotoLibrary.authorizationStatusForAccessLevel_(level) for level in self._authorized_access_levels()]}"
+            )
+            return False
+
+        video_url = self.foundation.NSURL.fileURLWithPath_(str(video.resolve()))
+        done = Event()
+        result = {"success": False, "error": None, "id": None}
+
+        def change_block():
+            request = self.photos.PHAssetCreationRequest.creationRequestForAsset()
+            video_options = (
+                self.photos.PHAssetResourceCreationOptions.alloc().init()
+            )
+            video_options.setShouldMoveFile_(False)
+            request.addResourceWithType_fileURL_options_(
+                self.photos.PHAssetResourceTypeVideo,
+                video_url,
+                video_options,
+            )
+            placeholder = request.placeholderForCreatedAsset()
+            if placeholder is not None:
+                result["id"] = str(placeholder.localIdentifier())
+
+        def completion(success, error):
+            result["success"] = bool(success)
+            result["error"] = None if error is None else str(error)
+            done.set()
+
+        self.photos.PHPhotoLibrary.sharedPhotoLibrary().performChanges_completionHandler_(
+            change_block,
+            completion,
+        )
+        if not done.wait(20):
+            self.logger.warning("视频导入超时")
+            return False
+        if result["success"]:
+            self.logger.info(
+                f"视频已导入 Photos: {result['id'] or video.name}",
+                False,
+            )
+            return True
+        self.logger.warning(
+            "PhotoKit 拒绝了当前视频: "
+            f"{result['error'] or 'unknown error'}"
+        )
+        return False
+
+    def import_video_with_osascript(self, video: Path) -> bool:
+        if not self.osascript:
+            self.logger.warning("未检测到 osascript，已跳过视频导入")
+            return False
+        path = str(video.resolve()).replace("\\", "\\\\").replace('"', '\\"')
+        command = [
+            self.osascript,
+            "-e",
+            f'tell application "Photos" to import POSIX file "{path}"',
+        ]
+        try:
+            run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except CalledProcessError as exc:
+            message = exc.stderr.strip() or exc.stdout.strip()
+            self.logger.warning(
+                f"AppleScript 导入视频到 Photos 失败: {message or 'unknown error'}"
+            )
+            return False
+        self.logger.info(f"视频已导入 Photos: {video.name}", False)
+        return True

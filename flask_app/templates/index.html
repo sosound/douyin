@@ -83,6 +83,15 @@
       transition: background 0.2s;
     }
     button:hover { background: var(--accent-hover); }
+    button.secondary {
+      background: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
+      margin-left: 0.75rem;
+    }
+    button.secondary:hover {
+      background: #23232b;
+    }
     button:disabled {
       opacity: 0.6;
       cursor: not-allowed;
@@ -245,10 +254,67 @@
           html += `</div>`;
         }
         html += `</div>`;
+        if (d.type === "实况") {
+          html += `<div style="margin-top:1rem;">`;
+          html += `<button type="button" class="secondary" onclick="exportLive()">导出 Apple 实况资产</button>`;
+          html += `</div>`;
+        } else if (d.type === "视频") {
+          html += `<div style="margin-top:1rem;">`;
+          html += `<button type="button" class="secondary" onclick="exportVideo()">下载并导入照片.app</button>`;
+          html += `</div>`;
+        }
         resultEl.innerHTML = html;
       } else {
         resultEl.innerHTML = `<p class="msg">${escapeHtml(data.message || "获取失败")}</p>`;
       }
+    }
+
+    async function exportLive() {
+      return exportMedia("Apple 实况资产");
+    }
+
+    async function exportVideo() {
+      return exportMedia("视频");
+    }
+
+    async function exportMedia(label) {
+      const link = document.getElementById("link").value.trim();
+      const cookie = document.getElementById("cookie").value.trim();
+      const proxy = document.getElementById("proxy").value.trim();
+      btn.disabled = true;
+      btnText.innerHTML = '<span class="spinner"></span> 导出中...';
+      try {
+        const res = await fetch("/api/export-media", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ link, cookie, proxy }),
+        });
+        const data = await res.json();
+        renderExportResult(data, label);
+      } catch (err) {
+        renderExportResult({ success: false, message: "导出失败: " + err.message, data: null }, label);
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = "获取作品数据";
+      }
+    }
+
+    function renderExportResult(data, label = "媒体资产") {
+      if (!data.success || !data.data) {
+        resultEl.classList.remove("hidden");
+        resultEl.classList.remove("success", "error");
+        resultEl.classList.add("error");
+        resultEl.innerHTML += `<div class="detail-box"><p class="msg">${escapeHtml(data.message || "导出失败")}</p></div>`;
+        return;
+      }
+      const files = Array.isArray(data.data.files) ? data.data.files : [];
+      let html = `<div class="detail-box"><p class="msg">${escapeHtml(data.message)}</p>`;
+      html += `<div class="downloads"><strong>${escapeHtml(label)}：</strong>`;
+      files.forEach((file) => {
+        html += `<a href="${file.url}" target="_blank" rel="noopener">${escapeHtml(file.name)}</a>`;
+      });
+      html += `</div></div>`;
+      resultEl.innerHTML += html;
     }
 
     function escapeHtml(s) {

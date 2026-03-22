@@ -1,4 +1,6 @@
+from pathlib import Path
 from textwrap import dedent
+from time import time
 from typing import TYPE_CHECKING
 
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -19,6 +21,7 @@ from ..models import (
     Comment,
     DataResponse,
     Detail,
+    DetailDownload,
     DetailTikTok,
     GeneralSearch,
     Live,
@@ -210,6 +213,28 @@ class APIServer(TikTok):
             extract: Detail, token: str = Depends(token_dependency)
         ):
             return await self.handle_detail(extract, False)
+
+        @self.server.post(
+            "/douyin/detail/download",
+            summary=_("下载并导出单个作品文件"),
+            description=_(
+                dedent("""
+                **参数**:
+
+                - **cookie**: 抖音 Cookie；可选参数
+                - **proxy**: 代理；可选参数
+                - **detail_id**: 抖音作品 ID；必需参数
+                - **live_photo_mode**: 实况导出模式；可选参数，默认值：`apple`
+                - **folder_name**: 导出目录名；可选参数
+                """)
+            ),
+            tags=[_("抖音")],
+            response_model=DataResponse,
+        )
+        async def handle_detail_download(
+            extract: DetailDownload, token: str = Depends(token_dependency)
+        ):
+            return await self.handle_detail_download(extract, False)
 
         @self.server.post(
             "/douyin/account",
@@ -675,6 +700,73 @@ class APIServer(TikTok):
             ):
                 return self.success_response(extract, data[0])
             return self.failed_response(extract)
+
+    async def handle_detail_download(
+        self,
+        extract: DetailDownload,
+        tiktok=False,
+    ):
+        export_root = Path(__file__).resolve().parents[2].joinpath(".web_exports")
+        export_root.mkdir(exist_ok=True)
+        folder_name = extract.folder_name or f"WEB_{extract.detail_id}_{int(time())}"
+        old_values = {
+            "parameter_root": self.parameter.root,
+            "parameter_folder_name": self.parameter.folder_name,
+            "parameter_live_photo_mode": self.parameter.live_photo_mode,
+            "downloader_root": self.downloader.root,
+            "downloader_folder_name": self.downloader.folder_name,
+            "downloader_live_photo_mode": self.downloader.live_photo_mode,
+        }
+        self.parameter.root = export_root
+        self.parameter.folder_name = folder_name
+        self.parameter.live_photo_mode = extract.live_photo_mode
+        self.downloader.root = export_root
+        self.downloader.folder_name = folder_name
+        self.downloader.live_photo_mode = extract.live_photo_mode
+        try:
+            await self.downloader.recorder.delete_id(extract.detail_id)
+            root, params, logger = self.record.run(self.parameter)
+            async with logger(root, console=self.console, **params) as record:
+                data = await self._handle_detail(
+                    [extract.detail_id],
+                    tiktok,
+                    record,
+                    True,
+                    False,
+                    extract.cookie,
+                    extract.proxy,
+                )
+                if not data:
+                    return self.failed_response(extract)
+                await self.downloader.run(data, "detail", tiktok=tiktok)
+            files = [
+                {
+                    "name": i.name,
+                    "suffix": i.suffix.lower(),
+                    "path": str(i.resolve()),
+                }
+                for i in sorted(export_root.joinpath(folder_name).iterdir())
+                if i.is_file()
+            ]
+            return self.success_response(
+                extract,
+                {
+                    "detail_id": extract.detail_id,
+                    "folder_name": folder_name,
+                    "root": str(export_root.resolve()),
+                    "files": files,
+                },
+                _("下载并导出成功！"),
+            )
+        finally:
+            self.parameter.root = old_values["parameter_root"]
+            self.parameter.folder_name = old_values["parameter_folder_name"]
+            self.parameter.live_photo_mode = old_values["parameter_live_photo_mode"]
+            self.downloader.root = old_values["downloader_root"]
+            self.downloader.folder_name = old_values["downloader_folder_name"]
+            self.downloader.live_photo_mode = old_values[
+                "downloader_live_photo_mode"
+            ]
 
     async def handle_account(
         self,
