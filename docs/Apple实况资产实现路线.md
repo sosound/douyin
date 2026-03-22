@@ -291,6 +291,134 @@ Web 导出的默认目录是项目根目录下的：
 
 - `WEB_<detail_id>_<timestamp>`
 
+## 当前快捷指令入口
+
+在 Web 验证通过后，当前分支又新增了一条更适合 iPhone 侧调用的 API 入口：
+
+- `POST /douyin/shortcut/import`
+
+### 设计目标
+
+这个接口不要求手机端先提取作品 ID，而是直接接收抖音分享文案或短链文本，由 Mac 端自动完成：
+
+1. 解析短链
+2. 提取作品 ID
+3. 下载作品
+4. 按当前媒体类型执行导入链路
+5. 返回一段适合快捷指令展示的短结果文本
+
+### 请求体
+
+最小请求体如下：
+
+```json
+{
+  "text": "抖音分享文案原文"
+}
+```
+
+可选字段：
+
+- `cookie`
+- `proxy`
+- `live_photo_mode`
+- `folder_name`
+
+### 返回重点字段
+
+返回结构里当前最适合快捷指令使用的是：
+
+- `message`
+- `data.media_type`
+- `data.detail_id`
+- `data.shortcut_text`
+
+其中 `data.shortcut_text` 是专门给手机端直接展示的一句结果，例如：
+
+```text
+已处理 实况 作品 7617127364405264613，导出目录：WEB_7617127364405264613_1774156467
+```
+
+### 当前实测结果
+
+这个入口已经实测通过：
+
+- 普通视频分享文本
+- `note` 型实况分享文本
+
+也就是说，iPhone 端已经可以不依赖 Web 页面，而直接通过快捷指令调用 Mac 上的 API。
+
+## 当前 API 守护进程
+
+为了让手机端调用不依赖手动开终端，本轮已把 API 服务整理为 macOS LaunchAgent。
+
+### 相关文件
+
+- 启动脚本：
+  [tools/macos/run_api_daemon.sh](/Users/star/code/douyin/tools/macos/run_api_daemon.sh)
+- LaunchAgent 模板：
+  [tools/macos/com.star.douyin-api.plist](/Users/star/code/douyin/tools/macos/com.star.douyin-api.plist)
+
+### 安装位置
+
+当前用户级安装路径：
+
+- `~/Library/LaunchAgents/com.star.douyin-api.plist`
+
+### 当前行为
+
+LaunchAgent 会：
+
+- 开机或登录后自动启动
+- 在后台拉起 FastAPI 服务
+- 监听：
+  - `http://0.0.0.0:5555`
+- 默认带上：
+  - `DOUK_APPLE_LIVE_IMPORT=1`
+
+### 日志文件
+
+运行日志当前写到项目目录：
+
+- 标准输出：
+  [douyin-api.stdout.log](/Users/star/code/douyin/.logs/douyin-api.stdout.log)
+- 标准错误：
+  [douyin-api.stderr.log](/Users/star/code/douyin/.logs/douyin-api.stderr.log)
+
+### 常用管理命令
+
+当前文档记录以下用户级命令：
+
+```bash
+launchctl print gui/$(id -u)/com.star.douyin-api
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/com.star.douyin-api.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.star.douyin-api.plist
+```
+
+## 当前公网接入形态
+
+本轮还验证了一个临时公网入口：
+
+- `cloudflared tunnel --url http://127.0.0.1:5555`
+
+它已经证明：
+
+- iPhone 快捷指令可以通过公网 HTTPS 调用这台 Mac 的 API
+- 不需要 Tailscale
+- 不和 Shadowrocket 抢 iOS 的 VPN 扩展位
+
+但当前仍只适合临时验证，因为：
+
+- `trycloudflare.com` quick tunnel 地址不固定
+- tunnel 进程退出后地址立即失效
+- 尚未接入固定域名
+
+因此当前收口结论是：
+
+- 本机 API 后台守护已经稳定
+- iPhone 快捷指令入口已经验证可用
+- 长期固定公网入口仍待后续结合域名与中转方案再落地
+
 ## 当前验证进展（2026-03-22）
 
 本轮已经完成以下闭环验证：

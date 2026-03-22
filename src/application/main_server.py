@@ -32,6 +32,7 @@ from ..models import (
     Reply,
     Settings,
     ShortUrl,
+    ShortcutImport,
     UrlResponse,
     UserSearch,
     VideoSearch,
@@ -192,6 +193,28 @@ class APIServer(TikTok):
                 url=None,
                 params=extract.model_dump(),
             )
+
+        @self.server.post(
+            "/douyin/shortcut/import",
+            summary=_("快捷指令导入单个作品到 Photos"),
+            description=_(
+                dedent("""
+                **参数**:
+
+                - **text**: 抖音分享文本或链接；必需参数
+                - **cookie**: 抖音 Cookie；可选参数
+                - **proxy**: 代理；可选参数
+                - **live_photo_mode**: 实况导出模式；可选参数，默认值：`apple`
+                - **folder_name**: 导出目录名；可选参数
+                """)
+            ),
+            tags=[_("抖音")],
+            response_model=DataResponse,
+        )
+        async def handle_shortcut_import(
+            extract: ShortcutImport, token: str = Depends(token_dependency)
+        ):
+            return await self.handle_shortcut_import(extract, False)
 
         @self.server.post(
             "/douyin/detail",
@@ -767,6 +790,63 @@ class APIServer(TikTok):
             self.downloader.live_photo_mode = old_values[
                 "downloader_live_photo_mode"
             ]
+
+    async def handle_shortcut_import(
+        self,
+        extract: ShortcutImport,
+        tiktok=False,
+    ):
+        resolved = await self.handle_redirect(extract.text, extract.proxy)
+        detail_ids = self.links.detail(resolved or extract.text)
+        if not detail_ids:
+            return self.failed_response(extract, _("无法从分享文本中提取作品 ID！"))
+
+        detail_id = detail_ids[0]
+        detail_extract = DetailDownload(
+            detail_id=detail_id,
+            cookie=extract.cookie,
+            proxy=extract.proxy,
+            live_photo_mode=extract.live_photo_mode,
+            folder_name=extract.folder_name,
+        )
+        result = await self.handle_detail_download(detail_extract, tiktok)
+        if not result.data:
+            return DataResponse(
+                message=result.message,
+                data=None,
+                params=extract.model_dump(),
+            )
+
+        files = result.data.get("files", [])
+        suffixes = {i.get("suffix", "").lower() for i in files}
+        media_type = "未知"
+        if ".livephoto.json" in suffixes or any(
+            str(i.get("name", "")).endswith(".livephoto.json") for i in files
+        ):
+            media_type = _("实况")
+        elif ".mp4" in suffixes or ".mov" in suffixes:
+            media_type = _("视频")
+        elif ".jpeg" in suffixes or ".jpg" in suffixes or ".png" in suffixes:
+            media_type = _("图片")
+
+        data = {
+            **result.data,
+            "resolved_url": resolved or "",
+            "detail_id": detail_id,
+            "media_type": media_type,
+            "shortcut_text": _(
+                "已处理 {media_type} 作品 {detail_id}，导出目录：{folder_name}"
+            ).format(
+                media_type=media_type,
+                detail_id=detail_id,
+                folder_name=result.data.get("folder_name", ""),
+            ),
+        }
+        return DataResponse(
+            message=_("快捷指令导入完成！"),
+            data=data,
+            params=extract.model_dump(),
+        )
 
     async def handle_account(
         self,

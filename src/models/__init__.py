@@ -13,6 +13,7 @@ from .comment import Comment
 from .reply import Reply
 from .mix import Mix, MixTikTok
 from .live import Live, LiveTikTok
+from .shortcut import ShortcutImport
 
 __all__ = (
     "GeneralSearch",
@@ -34,4 +35,5 @@ __all__ = (
     "MixTikTok",
     "Live",
     "LiveTikTok",
+    "ShortcutImport",
 )
