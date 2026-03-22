@@ -344,6 +344,8 @@ class Extractor:
         # 作品分类
         if images := self.safe_extract(data, "images"):
             self.__extract_image_info(item, data, images)
+        elif self.__is_live_video_detail(data):
+            self.__extract_live_video_info(item, data)
         else:
             self.__extract_video_info(
                 item,
@@ -440,6 +442,41 @@ class Extractor:
                 )
                 for i in images
             ]
+
+    def __is_live_video_detail(
+        self,
+        data: SimpleNamespace,
+    ) -> bool:
+        return bool(
+            self.safe_extract(data, "animated_image_info")
+            and self.safe_extract(
+                data,
+                f"video.cover.url_list[{STATIC_COVER_INDEX}]",
+            )
+            and self.__extract_video_download(data)[-1]
+        )
+
+    def __extract_live_video_info(
+        self,
+        item: dict,
+        data: SimpleNamespace,
+    ) -> None:
+        self.__set_blank_data(
+            item,
+            data,
+            _("实况"),
+        )
+        item["downloads"] = [
+            {
+                "image": self.safe_extract(
+                    data,
+                    f"video.cover.url_list[{STATIC_COVER_INDEX}]",
+                ),
+                "video": self.__extract_video_download(
+                    data,
+                )[-1],
+            }
+        ]
 
     def __extract_image_info_tiktok(
         self,
