@@ -41,6 +41,11 @@
 - 检测到 `exiftool` 时，会为 `.mov` 写入匹配的 `ContentIdentifier`
 - 在 macOS 上检测到 `AVFoundation / CoreMedia` 时，会为 `.mov` 追加 `still-image-time` timed metadata track
 - 在 macOS 上显式设置 `DOUK_APPLE_LIVE_IMPORT=1` 时，会优先通过 PyObjC PhotoKit 把 `jpeg + mov` 作为 `photo + pairedVideo` 导入 Photos；若不可用，再回退到 Swift 辅助脚本
+- Web 端已经提供单作品导出入口，可直接调用后端导出并下载产物
+- Web 端当前已经覆盖三类媒体保存到 `照片.app`：
+  - `实况`：导出 `jpeg + mov + .livephoto.json`，并导入 `照片.app`
+  - `静态图`：混合作品中的纯图片会作为普通照片导入 `照片.app`
+  - `视频`：普通视频作品可直接下载并导入 `照片.app`
 
 ## 路线结论
 
@@ -240,6 +245,51 @@
 3. 仅在发现明确差异后，再评估是否值得继续模拟
 
 在没有完成原生资产对照前，项目不应再将“实况有声播放”表述为当前能力。
+
+## 当前 Web 交付形态
+
+本轮已把一部分能力接入到本地 Web 测试页，便于非命令行方式验证。
+
+### 入口
+
+- Web 页面：`http://127.0.0.1:5009`
+- API 文档：`http://127.0.0.1:5555/docs`
+
+### Web 当前支持的动作
+
+1. 输入抖音作品链接并获取详情
+2. 如果作品类型是 `实况`
+   - 显示“导出 Apple 实况资产”
+   - 导出目录下生成：
+     - `.jpeg`
+     - `.mov`
+     - `.livephoto.json`
+   - 若开启 `DOUK_APPLE_LIVE_IMPORT=1`，会自动尝试导入 `照片.app`
+3. 如果作品类型是 `视频`
+   - 显示“下载并导入照片.app”
+   - 导出目录下生成：
+     - `.mp4`
+   - 若开启 `DOUK_APPLE_LIVE_IMPORT=1`，会自动尝试导入 `照片.app`
+
+### 混合作品当前行为
+
+对“静态图 + 动态图混合”的实况作品，当前行为已经明确：
+
+- 带 `video` 的项：
+  - 走 Apple 实况资产导出与导入链路
+- `video = ''` 的项：
+  - 保留为普通 `jpeg`
+  - 同步作为普通照片导入 `照片.app`
+
+### 导出目录
+
+Web 导出的默认目录是项目根目录下的：
+
+- `.web_exports/`
+
+每次单作品导出会创建一个子目录，例如：
+
+- `WEB_<detail_id>_<timestamp>`
 
 ## 当前验证进展（2026-03-22）
 
