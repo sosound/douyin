@@ -1,4 +1,6 @@
+from asyncio import Lock, create_task
 from pathlib import Path
+from shutil import rmtree
 from textwrap import dedent
 from time import time
 from typing import TYPE_CHECKING
@@ -68,6 +70,8 @@ class APIServer(TikTok):
             server_mode,
         )
         self.server = None
+        self.shortcut_import_lock = Lock()
+        self.shortcut_tasks = {}
 
     async def handle_redirect(self, text: str, proxy: str = None) -> str:
         return await self.links.run(
@@ -285,6 +289,28 @@ class APIServer(TikTok):
             extract: Account, token: str = Depends(token_dependency)
         ):
             return await self.handle_account(extract, False)
+
+        @self.server.get(
+            "/douyin/shortcut/task/{task_id}",
+            summary=_("查询快捷指令后台任务状态"),
+            description=_("返回快捷指令后台导入任务的当前状态"),
+            tags=[_("抖音")],
+            response_model=DataResponse,
+        )
+        async def handle_shortcut_task_status(
+            task_id: str, token: str = Depends(token_dependency)
+        ):
+            if data := self.shortcut_tasks.get(task_id):
+                return DataResponse(
+                    message=_("获取数据成功！"),
+                    data=data,
+                    params={"task_id": task_id},
+                )
+            return DataResponse(
+                message=_("获取数据失败！"),
+                data=None,
+                params={"task_id": task_id},
+            )
 
         @self.server.post(
             "/douyin/mix",
@@ -796,6 +822,59 @@ class APIServer(TikTok):
         extract: ShortcutImport,
         tiktok=False,
     ):
+        if extract.background:
+            task_id = f"shortcut_{int(time() * 1000)}"
+            self.shortcut_tasks[task_id] = {
+                "task_id": task_id,
+                "status": "queued",
+                "resolved_url": "",
+                "detail_id": "",
+                "media_type": "",
+                "result": None,
+            }
+            create_task(self._run_shortcut_import_task(task_id, extract, tiktok))
+            return DataResponse(
+                message=_("快捷指令任务已开始，正在后台处理！"),
+                data={
+                    "task_id": task_id,
+                    "status": "queued",
+                    "shortcut_text": _(
+                        "已接收任务，Mac 正在后台处理，请稍后到 照片.app 查看结果"
+                    ),
+                },
+                params=extract.model_dump(),
+            )
+        return await self._perform_shortcut_import(extract, tiktok)
+
+    async def _run_shortcut_import_task(
+        self,
+        task_id: str,
+        extract: ShortcutImport,
+        tiktok=False,
+    ) -> None:
+        task = self.shortcut_tasks[task_id]
+        task["status"] = "running"
+        try:
+            async with self.shortcut_import_lock:
+                result = await self._perform_shortcut_import(extract, tiktok)
+        except Exception as exc:
+            task["status"] = "failed"
+            task["result"] = {"message": repr(exc)}
+            return
+        task["result"] = result.model_dump()
+        if result.data:
+            task["status"] = "completed"
+            task["resolved_url"] = result.data.get("resolved_url", "")
+            task["detail_id"] = result.data.get("detail_id", "")
+            task["media_type"] = result.data.get("media_type", "")
+        else:
+            task["status"] = "failed"
+
+    async def _perform_shortcut_import(
+        self,
+        extract: ShortcutImport,
+        tiktok=False,
+    ):
         resolved = await self.handle_redirect(extract.text, extract.proxy)
         detail_ids = self.links.detail(resolved or extract.text)
         if not detail_ids:
@@ -842,6 +921,22 @@ class APIServer(TikTok):
                 folder_name=result.data.get("folder_name", ""),
             ),
         }
+        if not extract.keep_files:
+            folder_name = result.data.get("folder_name", "")
+            root = Path(result.data.get("root", ""))
+            target = root.joinpath(folder_name) if folder_name and root else None
+            if target and target.is_dir():
+                rmtree(target, ignore_errors=True)
+            data["files"] = []
+            data["shortcut_text"] = _(
+                "已处理 {media_type} 作品 {detail_id}，并已清理本地缓存"
+            ).format(
+                media_type=media_type,
+                detail_id=detail_id,
+            )
+            data["kept_files"] = False
+        else:
+            data["kept_files"] = True
         return DataResponse(
             message=_("快捷指令导入完成！"),
             data=data,

@@ -296,6 +296,7 @@ Web 导出的默认目录是项目根目录下的：
 在 Web 验证通过后，当前分支又新增了一条更适合 iPhone 侧调用的 API 入口：
 
 - `POST /douyin/shortcut/import`
+- `GET /douyin/shortcut/task/{task_id}`
 
 ### 设计目标
 
@@ -305,7 +306,8 @@ Web 导出的默认目录是项目根目录下的：
 2. 提取作品 ID
 3. 下载作品
 4. 按当前媒体类型执行导入链路
-5. 返回一段适合快捷指令展示的短结果文本
+5. 在后台继续下载和导入
+6. 手机端只需要立即拿到任务状态
 
 ### 请求体
 
@@ -323,21 +325,61 @@ Web 导出的默认目录是项目根目录下的：
 - `proxy`
 - `live_photo_mode`
 - `folder_name`
+- `keep_files`
+- `background`
 
 ### 返回重点字段
 
 返回结构里当前最适合快捷指令使用的是：
 
 - `message`
-- `data.media_type`
-- `data.detail_id`
+- `data.task_id`
+- `data.status`
 - `data.shortcut_text`
 
 其中 `data.shortcut_text` 是专门给手机端直接展示的一句结果，例如：
 
 ```text
-已处理 实况 作品 7617127364405264613，导出目录：WEB_7617127364405264613_1774156467
+已接收任务，Mac 正在后台处理，请稍后到 照片.app 查看结果
 ```
+
+### 后台任务机制
+
+当前快捷指令入口已经调整为默认后台模式：
+
+- `background = true` 为默认值
+- `POST /douyin/shortcut/import` 会立即返回
+- 真正的下载、转换和导入在 Mac 后台继续执行
+
+这样做的原因是：
+
+- 多张实况作品的导入时间明显更长
+- iPhone 快捷指令等待同步响应时容易先报网络超时
+
+新增状态查询接口：
+
+- `GET /douyin/shortcut/task/{task_id}`
+
+返回字段示例：
+
+- `queued`
+- `running`
+- `completed`
+- `failed`
+
+当任务完成后，状态接口里会附带完整结果：
+
+- `resolved_url`
+- `detail_id`
+- `media_type`
+- `result`
+
+也就是说，当前快捷指令入口的正确使用方式已经变成：
+
+1. 手机先提交分享文本
+2. 立即拿到 `task_id`
+3. Mac 在后台继续处理
+4. 最终到 `照片.app` 查看导入结果，或按需查询任务状态
 
 ### 当前实测结果
 
@@ -345,6 +387,13 @@ Web 导出的默认目录是项目根目录下的：
 
 - 普通视频分享文本
 - `note` 型实况分享文本
+- 普通图集分享文本
+
+并且已经确认：
+
+- 快捷指令入口改成后台任务后，可显著减少手机端“网络连接中断 / 超时”提示
+- 普通图集作品现在也会真正导入 `照片.app`
+- 默认行为下，导入完成后会自动清理 `.web_exports` 下对应临时目录，不再持续占用本地空间
 
 也就是说，iPhone 端已经可以不依赖 Web 页面，而直接通过快捷指令调用 Mac 上的 API。
 
@@ -375,6 +424,7 @@ LaunchAgent 会：
   - `http://0.0.0.0:5555`
 - 默认带上：
   - `DOUK_APPLE_LIVE_IMPORT=1`
+  - Homebrew 工具路径（确保后台环境可找到 `ffmpeg` / `exiftool`）
 
 ### 日志文件
 
@@ -397,27 +447,29 @@ launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.star.douyin-api.plis
 
 ## 当前公网接入形态
 
-本轮还验证了一个临时公网入口：
+当前已经接入固定域名的 Cloudflare Tunnel：
 
-- `cloudflared tunnel --url http://127.0.0.1:5555`
+- `https://shortcut.galaxystream.online/douyin/shortcut/import`
 
-它已经证明：
+当前相关文件：
+
+- [tools/macos/cloudflared-config.yml](/Users/star/code/douyin/tools/macos/cloudflared-config.yml)
+- [tools/macos/run_cloudflared_daemon.sh](/Users/star/code/douyin/tools/macos/run_cloudflared_daemon.sh)
+- [tools/macos/com.star.douyin-cloudflared.plist](/Users/star/code/douyin/tools/macos/com.star.douyin-cloudflared.plist)
+
+当前固定域名方案已经证明：
 
 - iPhone 快捷指令可以通过公网 HTTPS 调用这台 Mac 的 API
 - 不需要 Tailscale
 - 不和 Shadowrocket 抢 iOS 的 VPN 扩展位
+- `cloudflared` 也已经作为 LaunchAgent 后台常驻
 
-但当前仍只适合临时验证，因为：
-
-- `trycloudflare.com` quick tunnel 地址不固定
-- tunnel 进程退出后地址立即失效
-- 尚未接入固定域名
-
-因此当前收口结论是：
+因此当前收口结论更新为：
 
 - 本机 API 后台守护已经稳定
+- 固定域名 tunnel 已可用
 - iPhone 快捷指令入口已经验证可用
-- 长期固定公网入口仍待后续结合域名与中转方案再落地
+- 当前需要继续关注的是“多组实况导入耗时”和“手机侧同步等待超时”的体验问题，而不是公网入口可用性
 
 ## 当前验证进展（2026-03-22）
 

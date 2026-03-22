@@ -299,6 +299,7 @@ class Downloader:
             skipped_video=set(),
             downloaded_live=set(),
             skipped_live=set(),
+            image_import=[],
             video_import=[],
             live_motion_convert=[],
             live_static_import=[],
@@ -329,6 +330,7 @@ class Downloader:
                     **params,
                     type_=_("图集"),
                     skipped=count.skipped_image,
+                    image_import=count.image_import,
                 )
             elif t == _("视频"):
                 await self.download_video(
@@ -354,6 +356,7 @@ class Downloader:
             tasks, count, self.general_progress_object(), **kwargs
         )
         self.finalize_live_photo_exports(count.live_motion_convert)
+        self.finalize_image_imports(count.image_import)
         self.finalize_video_imports(count.video_import)
         self.finalize_static_photo_imports(count.live_static_import)
         self.statistics_count(count)
@@ -409,6 +412,7 @@ class Downloader:
         id_: str,
         item: SimpleNamespace,
         skipped: set,
+        image_import: list,
         temp_root: Path,
         actual_root: Path,
         suffix: str = "jpeg",
@@ -442,6 +446,7 @@ class Downloader:
                 )
                 self.log.info(f"文件路径: {p.resolve()}", False)
                 skipped.add(id_)
+                image_import.append(p)
                 continue
             tasks.append(
                 (
@@ -453,6 +458,7 @@ class Downloader:
                     suffix,
                 )
             )
+            image_import.append(p)
 
     async def download_video(
         self,
@@ -662,6 +668,16 @@ class Downloader:
                 )
 
     def finalize_static_photo_imports(self, photos: list[Path]) -> None:
+        if self.live_photo_mode != "apple" or not photos:
+            return
+        imported = set()
+        for photo in photos:
+            if photo in imported or not photo.is_file():
+                continue
+            imported.add(photo)
+            self.apple_live_photo.import_static_photo(photo)
+
+    def finalize_image_imports(self, photos: list[Path]) -> None:
         if self.live_photo_mode != "apple" or not photos:
             return
         imported = set()

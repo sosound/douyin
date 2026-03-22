@@ -8,6 +8,7 @@ LOG_DIR="$ROOT/.logs"
 mkdir -p "$LOG_DIR"
 cd "$ROOT"
 
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 export DOUK_APPLE_LIVE_IMPORT=1
 
 exec "$PYTHON" - <<'PY'

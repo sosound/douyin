@@ -1,0 +1,6 @@
+tunnel: 509636ee-336e-46aa-877a-dfb34783c8b1
+
+ingress:
+  - hostname: shortcut.galaxystream.online
+    service: http://127.0.0.1:5555
+  - service: http_status:404

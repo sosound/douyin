@@ -4,11 +4,14 @@ from platform import system
 from shutil import which
 from subprocess import CalledProcessError, run
 from threading import Event
+from time import sleep
 
 __all__ = ["AppleLivePhotoImporter"]
 
 
 class AppleLivePhotoImporter:
+    APPLESCRIPT_IMPORT_SETTLE_SECONDS = 6
+
     def __init__(self, logger):
         self.logger = logger
         self.enabled = self._check_enabled()
@@ -67,7 +70,14 @@ class AppleLivePhotoImporter:
         if not self.enabled or system() != "Darwin":
             return False
         if self.photos and self.foundation:
-            return self.import_pair_with_pyobjc(photo, motion)
+            if self.import_pair_with_pyobjc(photo, motion):
+                return True
+            if self.osascript:
+                self.logger.warning(
+                    "Apple 实况的 PhotoKit 导入失败，已回退到 Photos AppleScript 导入"
+                )
+                return self.import_pair_with_osascript(photo, motion)
+            return False
         if not self.script.is_file():
             self.logger.warning("未找到 macOS 实况导入脚本，已跳过 Photos 导入")
             return False
@@ -97,6 +107,43 @@ class AppleLivePhotoImporter:
             self.logger.info(f"Apple 实况已导入 Photos: {message}", False)
         else:
             self.logger.info("Apple 实况已导入 Photos", False)
+        return True
+
+    def import_pair_with_osascript(self, photo: Path, motion: Path) -> bool:
+        if not self.osascript:
+            self.logger.warning("未检测到 osascript，已跳过 Apple 实况导入")
+            return False
+        photo_path = str(photo.resolve()).replace("\\", "\\\\").replace('"', '\\"')
+        motion_path = str(motion.resolve()).replace("\\", "\\\\").replace('"', '\\"')
+        command = [
+            self.osascript,
+            "-e",
+            (
+                'tell application "Photos" to import '
+                f'{{POSIX file "{photo_path}", POSIX file "{motion_path}"}} '
+                "with skip check duplicates"
+            ),
+        ]
+        try:
+            run(
+                command,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except CalledProcessError as exc:
+            message = exc.stderr.strip() or exc.stdout.strip()
+            self.logger.warning(
+                f"AppleScript 导入 Apple 实况到 Photos 失败: {message or 'unknown error'}"
+            )
+            return False
+        # Photos 在 AppleScript import 返回后仍会异步整理资源。
+        # 多组实况连续导入过快时，前一组可能还没稳定配对就被后一组打断。
+        sleep(self.APPLESCRIPT_IMPORT_SETTLE_SECONDS)
+        self.logger.info(
+            f"Apple 实况已通过 AppleScript 导入 Photos: {photo.name}",
+            False,
+        )
         return True
 
     def import_photo(self, photo: Path) -> bool:
